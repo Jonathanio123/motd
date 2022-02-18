@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 
 //TODO: Revamp function
 float pb(float total, float used, float size)
@@ -47,6 +48,7 @@ int main()
     }
     fgets(os_str, sizeof(os_str), fp);
     fclose(fp);
+    fp = NULL;
 
     printf("OS:         ");
     {
@@ -59,7 +61,10 @@ int main()
     fflush(stdout);
     // TODO: Find a more elogant and consistant way to get ipv4 address.
     system("ip a | awk '/inet / && /global/ {split($2, arr, /\\//); print arr[1]}' | head -n 1");
+
     // Change YourHostname to your pcs hostname and Public ip to your domain name/public ip.
+    // If not it wil get your public ip trough curl witch is quite a bit slower on first run.
+    // It wil save it in /tmp/motd and read from it next time the script runs.
     if (strcmp(hostname, "YourHostname") == 0)
     {
         printf("Public IP:  YourPublicIp\n");
@@ -67,11 +72,44 @@ int main()
     }
     else
     {
-	// Curl command increases running by 0.2s. Increasing total runtime from ~0.05 to ~0.205
         printf("Public IP:  ");
         fflush(stdout);
-        system("curl -m 2 --silent https://ipinfo.io/ip");
-        printf("\n");
+        char publicIPString[32];
+
+        if (access("/tmp/motd", R_OK) == 0)
+        {
+            fp = fopen("/tmp/motd", "r");
+            if (fp == NULL)
+            {
+                perror("Error opening file");
+                return (-1);
+            }
+
+            fgets(publicIPString, sizeof(publicIPString), fp);
+            fclose(fp);
+            fp = NULL;
+
+        } else {
+
+        // Curl command increases running by 0.2s. Increasing total runtime from ~0.05 to ~0.205
+        fp = popen("curl -m 2 --silent https://ipinfo.io/ip", "r");
+        fgets(publicIPString, sizeof(publicIPString), fp);
+        fclose(fp);
+
+        fp = fopen("/tmp/motd", "w"); 
+        if (fp == NULL)
+        {
+                perror("Error writing file motd to /tmp/motd");
+                return (-1);
+        }
+        fputs(publicIPString, fp);
+        fclose(fp);
+
+        }
+
+        printf("%s\n", publicIPString);
+
+        
     }
 
     printf("Uptime:     ");
@@ -121,6 +159,7 @@ int main()
         }
     }
     fclose(fp);
+    fp = NULL;
     memUsed = memTotal - memFree;
     swapUsed = swapTotal - swapFree;
 
@@ -172,6 +211,8 @@ int main()
             }
         }
         pclose(fp);
+        fp = NULL;
+
 
         printf("\nDisk space: Root - %.1fGB used, %.1fGB free\n            ",
                rootUsed, rootFree);
@@ -185,45 +226,51 @@ int main()
     }
 
     /* Open the command for reading. */
-    fp = popen("/bin/zpool list | awk 'FNR == 2 {print $2 $3 $4}'", "r");
-    if (fp != NULL)
+    if (access("/bin/zpool", X_OK) == 0)
     {
-        char storage_str[1035];
-        float zfsTotal, zfsUsed, zfsFree;
 
-        /* Read the output a line at a time - output it. */
-        fgets(storage_str, sizeof(storage_str), fp);
-        pclose(fp);
-        char *token = strtok(storage_str, "T");
-        for (int i = 0; i < 3; i++)
+        fp = popen("/bin/zpool list | awk 'FNR == 2 {print $2 $3 $4}'", "r");
+        if (fp != NULL)
         {
-            if (i == 0)
-            {
-                zfsTotal = atof(token);
-                //printf("\n%s, %i", token, i);
-            }
-            else if (i == 1)
-            {
-                zfsUsed = atof(token);
-                //printf("\n%s, %i", token, i);
-            }
-            else
-            {
-                zfsFree = atof(token);
-                //printf("\n%s, %i", token, i);
-            }
-            token = strtok(NULL, "T");
-        }
+            char storage_str[1035];
+            float zfsTotal, zfsUsed, zfsFree;
 
-        printf("\n            Storage - %.2fT used, %.2fT free\n            ",
-               zfsUsed, zfsFree);
-        fflush(stdout);
-        float zfsPercent = pb(zfsTotal, zfsUsed, 40);
-        printf("\n");
+            /* Read the output a line at a time - output it. */
+            fgets(storage_str, sizeof(storage_str), fp);
+            pclose(fp);
+            fp = NULL;
+            
+            char *token = strtok(storage_str, "T");
+            for (int i = 0; i < 3; i++)
+            {
+                if (i == 0)
+                {
+                    zfsTotal = atof(token);
+                    // printf("\n%s, %i", token, i);
+                }
+                else if (i == 1)
+                {
+                    zfsUsed = atof(token);
+                    // printf("\n%s, %i", token, i);
+                }
+                else
+                {
+                    zfsFree = atof(token);
+                    // printf("\n%s, %i", token, i);
+                }
+                token = strtok(NULL, "T");
+            }
 
-        if (zfsPercent > 0.80)
-        {
-            printf("            Storage partition nearing max capacity\n            %.2f%% used on storage\n", zfsPercent * pow(10, 2));
+            printf("\n            Storage - %.2fT used, %.2fT free\n            ",
+                   zfsUsed, zfsFree);
+            fflush(stdout);
+            float zfsPercent = pb(zfsTotal, zfsUsed, 40);
+            printf("\n");
+
+            if (zfsPercent > 0.80)
+            {
+                printf("            Storage partition nearing max capacity\n            %.2f%% used on storage\n", zfsPercent * pow(10, 2));
+            }
         }
     }
 

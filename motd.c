@@ -31,14 +31,19 @@ float pb(float total, float used, float size)
 int main()
 {
 
-    char hostname[1024];
-    gethostname(hostname, 1024);
-    char hostCommand[1024] = "figlet ";
+    if (getuid() == 0) {
+        printf("Running as root is not needed!");
+        return -2;
+    }
+
+    char hostname[254];
+    gethostname(hostname, 254);
+    char hostCommand[261] = "figlet ";
 
     system(strcat(hostCommand, hostname));
 
     FILE *fp;
-    char os_str[1024];
+    char os_str[200];
 
     fp = fopen("/etc/os-release", "r");
     if (fp == NULL)
@@ -63,7 +68,7 @@ int main()
     system("ip a | awk '/inet / && /global/ {split($2, arr, /\\//); print arr[1]}' | head -n 1");
 
     // Change YourHostname to your pcs hostname and Public ip to your domain name/public ip.
-    // If not it wil get your public ip trough curl witch is quite a bit slower on first run.
+    // If not it wil get your public ip trough curl witch is quite a bit slower on the first run.
     // It wil save it in /tmp/motd and read from it next time the script runs.
     if (strcmp(hostname, "YourHostname") == 0)
     {
@@ -116,6 +121,7 @@ int main()
     fflush(stdout);
     system("uptime -p | awk '{print substr($0,4,length($0))}'");
 
+
     char mem_str[1024];
     float memTotal, memUsed, memFree;
     float swapTotal, swapUsed, swapFree;
@@ -160,6 +166,7 @@ int main()
     }
     fclose(fp);
     fp = NULL;
+
     memUsed = memTotal - memFree;
     swapUsed = swapTotal - swapFree;
 
@@ -173,6 +180,7 @@ int main()
                swapUsed / pow(10, 6), swapFree / pow(10, 6), swapTotal / pow(10, 6));
         pb(swapTotal, swapUsed, 40);
     }
+
 
     fp = popen("/bin/df -h", "r");
     if (fp != NULL)
